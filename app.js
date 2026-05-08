@@ -143,6 +143,25 @@ function speakText(text, voiceName) {
   speechSynthesis.speak(utt);
 }
 
+function speakById(type, id) {
+  let text = '';
+  if (type === 'word') {
+    text = getWords().find(w => w.id === id)?.word ?? '';
+  } else {
+    text = getSentences().find(s => s.id === id)?.en ?? '';
+  }
+  if (text) speakText(text, getSettings().voiceName);
+}
+
+function speakQuizPrompt() {
+  if (!qzSession) return;
+  const { quizType, mode, words, items, current } = qzSession;
+  let text = '';
+  if (quizType === 'word') text = words[current].word;
+  else text = mode === 'sentence-en-ko' ? items[current].en : items[current].ko;
+  if (text) speakText(text, getSettings().voiceName);
+}
+
 /* CSV 한 줄 파싱 — 따옴표 필드 지원 */
 function parseCSVLine(line) {
   const res = []; let cur = ''; let inQ = false;
@@ -331,7 +350,12 @@ function renderSentenceTable() {
         </td>
         <td class="col-num">${i + 1}</td>
         <td class="col-word"><strong>${escapeHtml(word?.word ?? '(삭제됨)')}</strong></td>
-        <td class="sent-en-cell">${escapeHtml(s.en)}</td>
+        <td class="sent-en-cell">
+          <div class="cell-with-tts">
+            ${escapeHtml(s.en)}
+            <button class="tts-btn tts-inline" onclick="speakById('sent','${escapeHtml(s.id)}')" aria-label="발음 듣기" title="발음 듣기">🔊</button>
+          </div>
+        </td>
         <td class="sent-ko-cell">${escapeHtml(s.ko)}</td>
         <td class="sent-source-cell">${s.source ? escapeHtml(s.source) : ''}</td>
         <td>
@@ -416,9 +440,17 @@ function renderWordTable() {
         <input type="checkbox" class="mw-row-chk" data-id="${escapeHtml(w.id)}" ${_selWords.has(w.id) ? 'checked' : ''} />
       </td>
       <td class="col-num">${i+1}</td>
-      <td><strong>${escapeHtml(w.word)}</strong></td>
+      <td>
+        <div class="cell-with-tts">
+          <strong>${escapeHtml(w.word)}</strong>
+          <button class="tts-btn" onclick="speakById('word','${escapeHtml(w.id)}')" aria-label="발음 듣기" title="발음 듣기">🔊</button>
+        </div>
+      </td>
       <td><span class="badge badge-pos">${escapeHtml(POS_LABEL[w.pos] ?? w.pos)}</span></td>
-      <td>${escapeHtml(w.meaning)}</td>
+      <td>
+        ${escapeHtml(w.meaning)}
+        ${w.source ? `<div class="word-source">출처: ${escapeHtml(w.source)}</div>` : ''}
+      </td>
       <td><span class="badge badge-${escapeHtml(w.difficulty)}">${escapeHtml(LEVEL_LABEL[w.difficulty] ?? w.difficulty)}</span></td>
       <td>
         <button class="sent-toggle-btn" id="sent-badge-${escapeHtml(w.id)}"
@@ -466,11 +498,13 @@ function openWordModal(id) {
     document.getElementById('wm-word').value    = w.word;
     document.getElementById('wm-pos').value     = w.pos;
     document.getElementById('wm-meaning').value = w.meaning;
+    document.getElementById('wm-source').value  = w.source ?? '';
   } else {
     document.getElementById('wm-id').value      = '';
     document.getElementById('wm-word').value    = '';
     document.getElementById('wm-pos').value     = 'verb';
     document.getElementById('wm-meaning').value = '';
+    document.getElementById('wm-source').value  = '';
   }
   openModal('word-modal');
   document.getElementById('wm-word').focus();
@@ -499,15 +533,21 @@ document.getElementById('wm-save').addEventListener('click', () => {
   }
   if (!ok) return;
 
-  const id    = document.getElementById('wm-id').value;
-  const pos   = document.getElementById('wm-pos').value;
-  const words = getWords();
+  const id     = document.getElementById('wm-id').value;
+  const pos    = document.getElementById('wm-pos').value;
+  const source = document.getElementById('wm-source').value.trim();
+  const words  = getWords();
 
   if (id) {
     const idx = words.findIndex(w => w.id === id);
-    if (idx >= 0) words[idx] = { ...words[idx], word: wordVal, pos, meaning: meaningVal };
+    if (idx >= 0) {
+      words[idx] = { ...words[idx], word: wordVal, pos, meaning: meaningVal };
+      if (source) words[idx].source = source; else delete words[idx].source;
+    }
   } else {
-    words.push({ id: crypto.randomUUID(), word: wordVal, pos, meaning: meaningVal, difficulty: 'high', createdAt: Date.now() });
+    const newWord = { id: crypto.randomUUID(), word: wordVal, pos, meaning: meaningVal, difficulty: 'high', createdAt: Date.now() };
+    if (source) newWord.source = source;
+    words.push(newWord);
   }
 
   saveWords(words);
@@ -677,46 +717,67 @@ function importCombinedRows(rows) {
   const sIdx = (() => { const i = header.findIndex(h => /^(source|출처|소스)/.test(h)); return i >= 0 ? i : 5; })();
 
   const existingWords = getWords();
-  const wordMap = new Map(existingWords.map(w => [w.word.toLowerCase(), w]));
-  const now = Date.now();
-  let wordsAdded = 0;
-
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    const word    = String(row[wIdx] ?? '').trim();
-    const meaning = String(row[mIdx] ?? '').trim();
-    if (!word || !meaning) continue;
-    if (!wordMap.has(word.toLowerCase())) {
-      const newWord = { id: crypto.randomUUID(), word, pos: 'etc', meaning, difficulty: 'high', createdAt: now + wordsAdded };
-      existingWords.push(newWord);
-      wordMap.set(word.toLowerCase(), newWord);
-      wordsAdded++;
-    }
-  }
-  if (wordsAdded > 0) saveWords(existingWords);
-
+  const wordMap  = new Map(existingWords.map(w => [w.word.toLowerCase(), w]));
   const sents    = getSentences();
   const countMap = new Map();
-  sents.forEach(s => countMap.set(s.wordId, (countMap.get(s.wordId) ?? 0) + 1));
-  let sentsAdded = 0, skipped = 0;
+  const sentKeys = new Set();
+  sents.forEach(s => {
+    countMap.set(s.wordId, (countMap.get(s.wordId) ?? 0) + 1);
+    sentKeys.add(`${s.wordId}::${s.en.toLowerCase()}`);
+  });
+
+  const now = Date.now();
+  let wordsAdded = 0, sentsAdded = 0, skipped = 0;
+  let wordsDirty = false, sentsDirty = false;
+  let lastWordObj = null; // 단어 없는 행의 예문을 이전 단어에 연결
 
   for (let i = 1; i < rows.length; i++) {
-    const row    = rows[i];
-    const word   = String(row[wIdx] ?? '').trim();
-    const en     = String(row[eIdx] ?? '').trim();
-    const ko     = String(row[kIdx] ?? '').trim();
-    const source = String(row[sIdx] ?? '').trim();
-    if (!word || !en || !ko) continue;
-    const wordObj = wordMap.get(word.toLowerCase());
-    if (!wordObj) { skipped++; continue; }
-    if ((countMap.get(wordObj.id) ?? 0) >= 5) { skipped++; continue; }
-    const sent = { id: crypto.randomUUID(), wordId: wordObj.id, en, ko };
-    if (source) sent.source = source;
-    sents.push(sent);
-    countMap.set(wordObj.id, (countMap.get(wordObj.id) ?? 0) + 1);
-    sentsAdded++;
+    const row     = rows[i];
+    const word    = String(row[wIdx] ?? '').trim();
+    const meaning = String(row[mIdx] ?? '').trim();
+    const en      = String(row[eIdx] ?? '').trim();
+    const ko      = String(row[kIdx] ?? '').trim();
+    const source  = String(row[sIdx] ?? '').trim();
+
+    const hasWord = !!(word && meaning);
+    const hasSent = !!(en && ko);
+
+    if (!hasWord && !hasSent) continue; // 완전히 빈 행
+
+    // ── 단어 처리 ──
+    if (hasWord) {
+      if (!wordMap.has(word.toLowerCase())) {
+        const newWord = { id: crypto.randomUUID(), word, pos: 'etc', meaning, difficulty: 'high', createdAt: now + wordsAdded };
+        // 예문 없는 행의 출처는 단어에 저장
+        if (!hasSent && source) newWord.source = source;
+        existingWords.push(newWord);
+        wordMap.set(word.toLowerCase(), newWord);
+        wordsAdded++;
+        wordsDirty = true;
+      }
+      lastWordObj = wordMap.get(word.toLowerCase());
+    }
+
+    // ── 예문 처리 ──
+    if (hasSent) {
+      // 단어 없는 행은 직전 단어에 연결
+      const targetWord = lastWordObj;
+      if (!targetWord) { skipped++; continue; }
+      const key = `${targetWord.id}::${en.toLowerCase()}`;
+      if (sentKeys.has(key)) { skipped++; continue; }
+      if ((countMap.get(targetWord.id) ?? 0) >= 5) { skipped++; continue; }
+      const sent = { id: crypto.randomUUID(), wordId: targetWord.id, en, ko };
+      if (source) sent.source = source;
+      sents.push(sent);
+      sentKeys.add(key);
+      countMap.set(targetWord.id, (countMap.get(targetWord.id) ?? 0) + 1);
+      sentsAdded++;
+      sentsDirty = true;
+    }
   }
-  if (sentsAdded > 0) saveSentences(sents);
+
+  if (wordsDirty) saveWords(existingWords);
+  if (sentsDirty) saveSentences(sents);
 
   return { words: wordsAdded, sents: sentsAdded, skipped };
 }
@@ -782,7 +843,10 @@ function renderSentRow(wordId) {
         <div class="sent-subrow-item">
           <span class="sent-subrow-num">${i+1}</span>
           <div class="sent-subrow-text">
-            <div class="sent-subrow-en">${escapeHtml(s.en)}</div>
+            <div class="sent-subrow-en">
+              ${escapeHtml(s.en)}
+              <button class="tts-btn tts-inline" onclick="speakById('sent','${escapeHtml(s.id)}')" aria-label="발음 듣기" title="발음 듣기">🔊</button>
+            </div>
             <div class="sent-subrow-ko">${escapeHtml(s.ko)}</div>
             ${s.source ? `<div class="sent-subrow-source">출처: ${escapeHtml(s.source)}</div>` : ''}
           </div>
@@ -1140,7 +1204,10 @@ function renderQuestion() {
     <div class="qz-card" id="qz-card">
       <div class="qz-card-top">
         <span class="qz-prompt-label">${escapeHtml(promptLabel)}</span>
-        <button class="qz-edit-btn" onclick="openStudyEdit()" aria-label="수정하기">✏ 수정</button>
+        <div class="qz-card-actions">
+          <button class="qz-speak-btn" onclick="speakQuizPrompt()" aria-label="발음 듣기" title="발음 듣기">🔊</button>
+          <button class="qz-edit-btn" onclick="openStudyEdit()" aria-label="수정하기">✏ 수정</button>
+        </div>
       </div>
       <div class="${promptCls}" id="qz-prompt-text">${escapeHtml(prompt)}</div>
     </div>`;
@@ -1391,6 +1458,7 @@ function renderResult() {
     if (!w) return '';
     return `<div class="qz-wrong-card">
       <span class="qz-wrong-word">${escapeHtml(w.word)}</span>
+      <button class="tts-btn tts-inline" onclick="speakById('word','${escapeHtml(w.id)}')" aria-label="발음 듣기" title="발음 듣기">🔊</button>
       <span class="qz-wrong-sep">→</span>
       <span class="qz-wrong-meaning">${escapeHtml(w.meaning)}</span>
     </div>`;
@@ -1478,7 +1546,10 @@ function renderHome() {
           : `<span class="badge badge-count">NEW</span>`;
         return `<div class="today-card">
           <div class="today-card-main">
-            <div class="today-card-en">${escapeHtml(w.word)}</div>
+            <div class="today-card-en">
+              ${escapeHtml(w.word)}
+              <button class="tts-btn tts-inline" onclick="speakById('word','${escapeHtml(w.id)}')" aria-label="발음 듣기" title="발음 듣기">🔊</button>
+            </div>
             <div class="today-card-sub">${escapeHtml(w.meaning)} · ${escapeHtml(POS_LABEL[w.pos] ?? w.pos)}</div>
           </div>
           ${badge}

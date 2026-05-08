@@ -731,3 +731,26 @@
     .col-source { min-width: 80px; max-width: 120px; font-size: 12px; color: var(--text-muted); }
     .sent-source-cell { font-size: 12px; color: var(--text-muted); max-width: 120px; }
     .sent-subrow-source { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .word-source { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ─── TTS buttons ─── */
+    .tts-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      border: none; background: none; cursor: pointer;
+      font-size: 13px; padding: 2px 4px; border-radius: 4px;
+      color: var(--text-muted); line-height: 1; vertical-align: middle;
+      transition: background .12s, transform .1s;
+      flex-shrink: 0;
+    }
+    .tts-btn:hover { background: var(--primary-light); transform: scale(1.15); }
+    .tts-btn:active { transform: scale(.95); }
+    .tts-inline { font-size: 12px; }
+    .cell-with-tts { display: flex; align-items: center; gap: 4px; }
+
+    /* ─── Quiz speak button ─── */
+    .qz-card-actions { display: flex; align-items: center; gap: 6px; }
+    .qz-speak-btn {
+      border: 1px solid var(--border); background: var(--bg); cursor: pointer;
+      font-size: 13px; padding: 3px 8px; border-radius: 5px; line-height: 1;
+    }
+    .qz-speak-btn:hover { background: var(--primary-light); border-color: var(--primary); }
