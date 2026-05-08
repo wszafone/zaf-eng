@@ -725,3 +725,9 @@
     }
     .se-word-block { display: flex; flex-direction: column; gap: 0; }
     .se-sent-block { display: flex; flex-direction: column; gap: 0; }
+
+    /* ─── Source field ─── */
+    .field-opt { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+    .col-source { min-width: 80px; max-width: 120px; font-size: 12px; color: var(--text-muted); }
+    .sent-source-cell { font-size: 12px; color: var(--text-muted); max-width: 120px; }
+    .sent-subrow-source { font-size: 11px; color: var(--text-muted); margin-top: 2px; }

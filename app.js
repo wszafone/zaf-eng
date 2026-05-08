@@ -315,7 +315,7 @@ function renderSentenceTable() {
   const tbody = document.getElementById('ms-tbody');
 
   if (!sents.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">${
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">${
       getSentences().length === 0 ? '등록된 예문이 없습니다.' : '검색 결과가 없습니다.'
     }</div></td></tr>`;
     updateBulkDeleteBtn();
@@ -333,6 +333,7 @@ function renderSentenceTable() {
         <td class="col-word"><strong>${escapeHtml(word?.word ?? '(삭제됨)')}</strong></td>
         <td class="sent-en-cell">${escapeHtml(s.en)}</td>
         <td class="sent-ko-cell">${escapeHtml(s.ko)}</td>
+        <td class="sent-source-cell">${s.source ? escapeHtml(s.source) : ''}</td>
         <td>
           <div class="col-actions">
             <button class="btn btn-ghost btn-sm" onclick="openSentenceModal('${escapeHtml(s.id)}','${escapeHtml(s.wordId)}')">수정</button>
@@ -669,10 +670,11 @@ function importCombinedRows(rows) {
   if (rows.length < 2) { showToast('데이터가 없습니다.'); return { words: 0, sents: 0, skipped: 0 }; }
 
   const header = rows[0].map(h => String(h ?? '').toLowerCase().trim());
-  const wIdx = (() => { const i = header.findIndex(h => /^(word|영어|단어|english)/.test(h)); return i >= 0 ? i : 0; })();
-  const mIdx = (() => { const i = header.findIndex(h => /^(meaning|뜻|한국어|korean|의미|단어뜻)/.test(h)); return i >= 0 ? i : 1; })();
-  const eIdx = (() => { const i = header.findIndex(h => /^(example|예문|sentence)/.test(h)); return i >= 0 ? i : 2; })();
-  const kIdx = (() => { const i = header.findIndex(h => /^(예문뜻|translation|한글|ko)/.test(h)); return i >= 0 ? i : 3; })();
+  const wIdx = (() => { const i = header.findIndex(h => /^(word|영어|단어|english)/.test(h)); return i >= 0 ? i : 1; })();
+  const mIdx = (() => { const i = header.findIndex(h => /^(meaning|뜻|한국어|korean|의미|단어뜻)/.test(h)); return i >= 0 ? i : 2; })();
+  const eIdx = (() => { const i = header.findIndex(h => /^(example|예문|sentence)/.test(h)); return i >= 0 ? i : 3; })();
+  const kIdx = (() => { const i = header.findIndex(h => /^(예문뜻|translation|한글|ko)/.test(h)); return i >= 0 ? i : 4; })();
+  const sIdx = (() => { const i = header.findIndex(h => /^(source|출처|소스)/.test(h)); return i >= 0 ? i : 5; })();
 
   const existingWords = getWords();
   const wordMap = new Map(existingWords.map(w => [w.word.toLowerCase(), w]));
@@ -699,15 +701,18 @@ function importCombinedRows(rows) {
   let sentsAdded = 0, skipped = 0;
 
   for (let i = 1; i < rows.length; i++) {
-    const row  = rows[i];
-    const word = String(row[wIdx] ?? '').trim();
-    const en   = String(row[eIdx] ?? '').trim();
-    const ko   = String(row[kIdx] ?? '').trim();
+    const row    = rows[i];
+    const word   = String(row[wIdx] ?? '').trim();
+    const en     = String(row[eIdx] ?? '').trim();
+    const ko     = String(row[kIdx] ?? '').trim();
+    const source = String(row[sIdx] ?? '').trim();
     if (!word || !en || !ko) continue;
     const wordObj = wordMap.get(word.toLowerCase());
     if (!wordObj) { skipped++; continue; }
     if ((countMap.get(wordObj.id) ?? 0) >= 5) { skipped++; continue; }
-    sents.push({ id: crypto.randomUUID(), wordId: wordObj.id, en, ko });
+    const sent = { id: crypto.randomUUID(), wordId: wordObj.id, en, ko };
+    if (source) sent.source = source;
+    sents.push(sent);
     countMap.set(wordObj.id, (countMap.get(wordObj.id) ?? 0) + 1);
     sentsAdded++;
   }
@@ -779,6 +784,7 @@ function renderSentRow(wordId) {
           <div class="sent-subrow-text">
             <div class="sent-subrow-en">${escapeHtml(s.en)}</div>
             <div class="sent-subrow-ko">${escapeHtml(s.ko)}</div>
+            ${s.source ? `<div class="sent-subrow-source">출처: ${escapeHtml(s.source)}</div>` : ''}
           </div>
           <div class="sent-subrow-btns">
             <button class="btn btn-ghost btn-sm" onclick="openSentenceModal('${escapeHtml(s.id)}','${escapeHtml(wordId)}')">수정</button>
@@ -827,23 +833,26 @@ function openSentenceModal(id, wordId) {
   if (id) {
     const s = getSentences().find(s => s.id === id);
     if (!s) return;
-    document.getElementById('sm-id').value     = s.id;
-    document.getElementById('sm-wordid').value = s.wordId;
-    document.getElementById('sm-en').value     = s.en;
-    document.getElementById('sm-ko').value     = s.ko;
+    document.getElementById('sm-id').value       = s.id;
+    document.getElementById('sm-wordid').value   = s.wordId;
+    document.getElementById('sm-en').value       = s.en;
+    document.getElementById('sm-ko').value       = s.ko;
+    document.getElementById('sm-source').value   = s.source ?? '';
     wordField.style.display = 'none';
   } else if (wordId) {
-    document.getElementById('sm-id').value     = '';
-    document.getElementById('sm-wordid').value = wordId;
-    document.getElementById('sm-en').value     = '';
-    document.getElementById('sm-ko').value     = '';
+    document.getElementById('sm-id').value       = '';
+    document.getElementById('sm-wordid').value   = wordId;
+    document.getElementById('sm-en').value       = '';
+    document.getElementById('sm-ko').value       = '';
+    document.getElementById('sm-source').value   = '';
     wordField.style.display = 'none';
   } else {
     // 예문 탭에서 추가 — 단어 선택 드롭다운 표시
-    document.getElementById('sm-id').value     = '';
-    document.getElementById('sm-wordid').value = '';
-    document.getElementById('sm-en').value     = '';
-    document.getElementById('sm-ko').value     = '';
+    document.getElementById('sm-id').value       = '';
+    document.getElementById('sm-wordid').value   = '';
+    document.getElementById('sm-en').value       = '';
+    document.getElementById('sm-ko').value       = '';
+    document.getElementById('sm-source').value   = '';
     wordField.style.display = '';
     const words = getWords().sort((a, b) => a.word.localeCompare(b.word));
     wordSelect.innerHTML = words.length
@@ -863,8 +872,9 @@ function clearSmErrors() {
 
 document.getElementById('sm-save').addEventListener('click', () => {
   clearSmErrors();
-  const en = document.getElementById('sm-en').value.trim();
-  const ko = document.getElementById('sm-ko').value.trim();
+  const en     = document.getElementById('sm-en').value.trim();
+  const ko     = document.getElementById('sm-ko').value.trim();
+  const source = document.getElementById('sm-source').value.trim();
   let ok = true;
   if (!en) { document.getElementById('sm-en').classList.add('is-err'); document.getElementById('sm-en-err').textContent = '영어예문을 입력해주세요.'; ok = false; }
   if (!ko) { document.getElementById('sm-ko').classList.add('is-err'); document.getElementById('sm-ko-err').textContent = '한국어해석을 입력해주세요.'; ok = false; }
@@ -884,11 +894,16 @@ document.getElementById('sm-save').addEventListener('click', () => {
 
   if (id) {
     const idx = sents.findIndex(s => s.id === id);
-    if (idx >= 0) sents[idx] = { ...sents[idx], en, ko };
+    if (idx >= 0) {
+      sents[idx] = { ...sents[idx], en, ko };
+      if (source) sents[idx].source = source; else delete sents[idx].source;
+    }
   } else {
     if (!wordId) return;
     if (sents.filter(s => s.wordId === wordId).length >= 5) { showToast('최대 5개까지 등록 가능합니다.'); return; }
-    sents.push({ id: crypto.randomUUID(), wordId, en, ko });
+    const sent = { id: crypto.randomUUID(), wordId, en, ko };
+    if (source) sent.source = source;
+    sents.push(sent);
   }
 
   saveSentences(sents);

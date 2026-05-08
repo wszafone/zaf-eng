@@ -54,16 +54,18 @@
           <div class="help-popover" id="mw-upload-popover">
             <h4>파일 형식 안내 (CSV / Excel)</h4>
             <table>
-              <tr><th>A열 (단어)</th><th>B열 (단어뜻)</th><th>C열 (예문)</th><th>D열 (예문뜻)</th></tr>
-              <tr><td>헤더</td><td>헤더</td><td>헤더</td><td>헤더</td></tr>
-              <tr><td>apple</td><td>사과</td><td>I eat an apple.</td><td>나는 사과를 먹는다.</td></tr>
+              <tr><th>A열 (순번)</th><th>B열 (단어)</th><th>C열 (단어뜻)</th><th>D열 (예문)</th><th>E열 (예문뜻)</th><th>F열 (출처)</th></tr>
+              <tr><td>헤더</td><td>헤더</td><td>헤더</td><td>헤더</td><td>헤더</td><td>헤더</td></tr>
+              <tr><td>1</td><td>apple</td><td>사과</td><td>I eat an apple.</td><td>나는 사과를 먹는다.</td><td>교재 p.12</td></tr>
             </table>
             <ul>
               <li><em>1행은 헤더</em>로 항상 건너뜁니다.</li>
+              <li>A열(순번)은 무시됩니다.</li>
               <li>단어가 없으면 자동으로 <em>단어장에 추가</em>됩니다.</li>
               <li>이미 있는 단어는 건너뛰고 예문만 추가됩니다.</li>
               <li>단어당 최대 <em>5개</em> 예문까지 추가됩니다.</li>
-              <li>C·D열이 없으면 단어만 추가됩니다.</li>
+              <li>D·E열이 없으면 단어만 추가됩니다.</li>
+              <li>F열(출처)은 선택사항입니다.</li>
               <li>CSV는 UTF-8 · EUC-KR 모두 지원합니다.</li>
             </ul>
           </div>
@@ -110,6 +112,7 @@
             <th class="col-word">단어</th>
             <th>영어예문</th>
             <th>한국어해석</th>
+            <th class="col-source">출처</th>
             <th style="width:80px"></th>
           </tr>
         </thead>
@@ -191,6 +194,10 @@
         <label for="sm-ko">한국어해석 *</label>
         <textarea id="sm-ko" rows="2" placeholder="예: 어려움을 인내하며 견뎌야 합니다."></textarea>
         <span class="field-err" id="sm-ko-err"></span>
+      </div>
+      <div class="field">
+        <label for="sm-source">출처 <span class="field-opt">(선택)</span></label>
+        <input type="text" id="sm-source" placeholder="예: 교재 p.12" autocomplete="off" />
       </div>
     </div>
     <div class="modal-footer">
