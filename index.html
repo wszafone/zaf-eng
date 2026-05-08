@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>자프영어</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<!-- ── Navigation ── -->
+<nav class="nav" role="tablist" aria-label="메인 메뉴">
+  <a class="nav-tab" href="#home"          role="tab" data-view="home"          aria-label="홈"><span class="nav-icon" aria-hidden="true">🏠</span><span class="nav-text">홈</span></a>
+  <a class="nav-tab" href="#quiz-word"     role="tab" data-view="quiz-word"     aria-label="단어퀴즈"><span class="nav-icon" aria-hidden="true">🔤</span><span class="nav-text">단어퀴즈</span></a>
+  <a class="nav-tab" href="#quiz-sentence" role="tab" data-view="quiz-sentence" aria-label="예문퀴즈"><span class="nav-icon" aria-hidden="true">📖</span><span class="nav-text">예문퀴즈</span></a>
+  <a class="nav-tab" href="#manage-words"  role="tab" data-view="manage-words"  aria-label="단어관리"><span class="nav-icon" aria-hidden="true">📝</span><span class="nav-text">단어관리</span></a>
+  <a class="nav-tab" href="#settings"      role="tab" data-view="settings"      aria-label="설정"><span class="nav-icon" aria-hidden="true">⚙️</span><span class="nav-text">설정</span></a>
+</nav>
+
+<main class="main">
+
+  <!-- ── 홈 ── -->
+  <section id="home" class="view" role="tabpanel">
+    <div id="home-root"></div>
+  </section>
+
+  <!-- ── 단어퀴즈 ── -->
+  <section id="quiz-word" class="view" role="tabpanel">
+    <div id="qw-root"></div>
+  </section>
+
+  <!-- ── 예문퀴즈 ── -->
+  <section id="quiz-sentence" class="view" role="tabpanel">
+    <div id="qs-root"></div>
+  </section>
+
+  <!-- ══════════════════════════════════════
+       단어 / 예문 관리
+  ══════════════════════════════════════ -->
+  <section id="manage-words" class="view" role="tabpanel">
+
+    <div class="toolbar">
+      <input type="search" id="mw-search" class="toolbar-search" placeholder="단어 또는 뜻 검색" />
+      <div class="filter-group">
+        <button class="filter-btn active" data-level="all">전체</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="mw-sort-btn">등록순 ↕</button>
+      <div class="toolbar-right">
+        <div class="help-wrap">
+          <button class="btn btn-ghost btn-sm" id="mw-upload-btn">파일 업로드</button>
+          <button class="btn-help" id="mw-upload-help" title="파일 형식 안내">?</button>
+          <div class="help-popover" id="mw-upload-popover">
+            <h4>파일 형식 안내 (CSV / Excel)</h4>
+            <table>
+              <tr><th>A열 (단어)</th><th>B열 (단어뜻)</th><th>C열 (예문)</th><th>D열 (예문뜻)</th></tr>
+              <tr><td>헤더</td><td>헤더</td><td>헤더</td><td>헤더</td></tr>
+              <tr><td>apple</td><td>사과</td><td>I eat an apple.</td><td>나는 사과를 먹는다.</td></tr>
+            </table>
+            <ul>
+              <li><em>1행은 헤더</em>로 항상 건너뜁니다.</li>
+              <li>단어가 없으면 자동으로 <em>단어장에 추가</em>됩니다.</li>
+              <li>이미 있는 단어는 건너뛰고 예문만 추가됩니다.</li>
+              <li>단어당 최대 <em>5개</em> 예문까지 추가됩니다.</li>
+              <li>C·D열이 없으면 단어만 추가됩니다.</li>
+              <li>CSV는 UTF-8 · EUC-KR 모두 지원합니다.</li>
+            </ul>
+          </div>
+        </div>
+        <input type="file" class="file-hidden" id="mw-upload-input" accept=".csv,.xlsx,.xls" />
+        <button class="btn btn-primary btn-sm" id="mw-add-btn">+ 새 단어 추가</button>
+      </div>
+    </div>
+
+    <div class="section-meta">
+      <span class="section-meta-label" id="mw-count">총 0개</span>
+    </div>
+
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th class="col-num">#</th>
+            <th>영어단어</th>
+            <th>품사</th>
+            <th>한국어뜻</th>
+            <th>레벨</th>
+            <th>예문 (클릭)</th>
+            <th style="width:80px"></th>
+          </tr>
+        </thead>
+        <tbody id="mw-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 설정 ── -->
+  <section id="settings" class="view" role="tabpanel">
+    <div id="settings-root"></div>
+  </section>
+
+</main>
+<div class="toast" id="toast"></div>
+
+<!-- ══════════════════════════════════════
+     Word Modal
+══════════════════════════════════════ -->
+<div class="modal-overlay" id="word-modal" role="dialog" aria-modal="true" aria-labelledby="wm-title">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 id="wm-title">새 단어 추가</h3>
+      <button class="modal-close" data-close="word-modal" aria-label="닫기">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="wm-id" />
+      <div class="field">
+        <label for="wm-word">영어단어 *</label>
+        <input type="text" id="wm-word" placeholder="예: persevere" autocomplete="off" />
+        <span class="field-err" id="wm-word-err"></span>
+      </div>
+      <div class="field">
+        <label for="wm-pos">품사</label>
+        <select id="wm-pos">
+          <option value="noun">명사 (noun)</option>
+          <option value="verb">동사 (verb)</option>
+          <option value="adj">형용사 (adj)</option>
+          <option value="adv">부사 (adv)</option>
+          <option value="etc">기타 (etc)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="wm-meaning">한국어뜻 *</label>
+        <input type="text" id="wm-meaning" placeholder="예: 인내하다" />
+        <span class="field-err" id="wm-meaning-err"></span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close="word-modal">취소</button>
+      <button class="btn btn-primary" id="wm-save">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     Sentence Modal
+══════════════════════════════════════ -->
+<div class="modal-overlay" id="sent-modal" role="dialog" aria-modal="true" aria-labelledby="sm-title">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 id="sm-title">예문 추가</h3>
+      <button class="modal-close" data-close="sent-modal" aria-label="닫기">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="sm-id" />
+      <input type="hidden" id="sm-wordid" />
+      <div class="field">
+        <label for="sm-en">영어예문 *</label>
+        <textarea id="sm-en" rows="3" placeholder="예: You must persevere through difficulties."></textarea>
+        <span class="field-err" id="sm-en-err"></span>
+      </div>
+      <div class="field">
+        <label for="sm-ko">한국어해석 *</label>
+        <textarea id="sm-ko" rows="2" placeholder="예: 어려움을 인내하며 견뎌야 합니다."></textarea>
+        <span class="field-err" id="sm-ko-err"></span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close="sent-modal">취소</button>
+      <button class="btn btn-primary" id="sm-save">저장</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
