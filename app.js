@@ -1,64 +1,122 @@
 /*
- * EverWord — 나만의 영어 단어 & 생활영어 학습 앱
- * 기술스택: HTML5 / CSS3 / Vanilla JS / LocalStorage
- * 데이터 키: ew_words, ew_sentences, ew_settings
+ * 자프영어 — 나만의 영어 단어 & 생활영어 학습 앱
+ * 기술스택: HTML5 / CSS3 / Vanilla JS / Firebase Realtime Database
  * 작성일: 2026-04-29
  */
 
 /* ═══════════════════════════════════════════════════════════════
-   Storage
+   Storage — Firebase Realtime Database
+   단어·예문·설정·퀴즈결과 → Firebase
+   Claude API 키 → IndexedDB (민감 데이터, 기기 로컬 보관)
 ═══════════════════════════════════════════════════════════════ */
-const KEY_WORDS     = 'ew_words';
-const KEY_SENTENCES = 'ew_sentences';
-const KEY_SETTINGS  = 'ew_settings';
-const KEY_API_KEY   = 'ew_api_key';
-const CLAUDE_MODEL  = 'claude-haiku-4-5-20251001';
+const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
 const DEFAULT_SETTINGS = {
   voiceName: '', streak: 0, lastStudyDate: '',
   dailyGoal: 10, quizMode: 'multiple', defaultLevel: 'all'
 };
 
-function getWords()       { try { return JSON.parse(localStorage.getItem(KEY_WORDS))     ?? []; } catch(e) { console.error(e); return []; } }
-function saveWords(a)     { try { localStorage.setItem(KEY_WORDS,     JSON.stringify(a)); } catch(e) { console.error(e); alert('단어 저장에 실패했습니다.'); } }
-function getSentences()   { try { return JSON.parse(localStorage.getItem(KEY_SENTENCES)) ?? []; } catch(e) { console.error(e); return []; } }
-function saveSentences(a) { try { localStorage.setItem(KEY_SENTENCES, JSON.stringify(a)); } catch(e) { console.error(e); alert('예문 저장에 실패했습니다.'); } }
-function getSettings()    { try { const s = JSON.parse(localStorage.getItem(KEY_SETTINGS)); return s ? {...DEFAULT_SETTINGS,...s} : {...DEFAULT_SETTINGS}; } catch(e) { return {...DEFAULT_SETTINGS}; } }
-function saveSettings(o)  { try { localStorage.setItem(KEY_SETTINGS,  JSON.stringify(o)); } catch(e) { console.error(e); alert('설정 저장에 실패했습니다.'); } }
-function getApiKey()      { return localStorage.getItem(KEY_API_KEY) ?? ''; }
-function saveApiKey(k)    { localStorage.setItem(KEY_API_KEY, k); }
+// ── Firebase 초기화 ────────────────────────────────────────────
+firebase.initializeApp({
+  apiKey:            'AIzaSyCTVVCzP-Z5FkoGfWke0oWRB96uCXvXIag',
+  authDomain:        'zaf-eng.firebaseapp.com',
+  databaseURL:       'https://zaf-eng-default-rtdb.firebaseio.com',
+  projectId:         'zaf-eng',
+  storageBucket:     'zaf-eng.firebasestorage.app',
+  messagingSenderId: '792475365205',
+  appId:             '1:792475365205:web:8046c7e18d1673a28d89dc'
+});
+const _rtdb = firebase.database();
 
-/* ═══════════════════════════════════════════════════════════════
-   Seed Data
-═══════════════════════════════════════════════════════════════ */
-const SEED = [
-  { word:'persevere',   pos:'verb', meaning:'인내하다',     difficulty:'high',   en:'You must persevere through difficulties to achieve your goals.',          ko:'목표를 달성하려면 어려움을 인내하며 견뎌야 합니다.' },
-  { word:'diligent',    pos:'adj',  meaning:'부지런한',     difficulty:'middle', en:'She is a diligent student who never misses a deadline.',                  ko:'그녀는 마감을 절대 놓치지 않는 부지런한 학생입니다.' },
-  { word:'eloquent',    pos:'adj',  meaning:'유창한',       difficulty:'high',   en:'The eloquent speaker captivated the entire audience.',                    ko:'유창한 연설가가 청중 전체를 사로잡았습니다.' },
-  { word:'ambiguous',   pos:'adj',  meaning:'모호한',       difficulty:'high',   en:'The contract contained several ambiguous clauses that caused confusion.', ko:'계약서에는 혼란을 야기하는 모호한 조항이 여러 개 있었습니다.' },
-  { word:'abundant',    pos:'adj',  meaning:'풍부한',       difficulty:'middle', en:'This region has abundant natural resources.',                             ko:'이 지역에는 풍부한 천연자원이 있습니다.' },
-  { word:'contemplate', pos:'verb', meaning:'심사숙고하다', difficulty:'high',   en:'He sat quietly to contemplate his next move.',                            ko:'그는 다음 행동을 심사숙고하기 위해 조용히 앉았습니다.' },
-  { word:'resilient',   pos:'adj',  meaning:'회복력 있는',  difficulty:'high',   en:'Children are often more resilient than adults expect.',                   ko:'아이들은 어른들이 예상하는 것보다 더 회복력이 강한 경우가 많습니다.' },
-  { word:'meticulous',  pos:'adj',  meaning:'꼼꼼한',       difficulty:'high',   en:'The meticulous engineer checked every detail twice.',                     ko:'꼼꼼한 엔지니어는 모든 세부 사항을 두 번 확인했습니다.' },
-  { word:'pragmatic',   pos:'adj',  meaning:'실용적인',     difficulty:'high',   en:'We need a pragmatic approach to solve this problem efficiently.',         ko:'이 문제를 효율적으로 해결하려면 실용적인 접근 방식이 필요합니다.' },
-  { word:'collaborate', pos:'verb', meaning:'협력하다',     difficulty:'middle', en:'The two companies decided to collaborate on the new project.',            ko:'두 회사는 새 프로젝트에서 협력하기로 했습니다.' }
-];
+// ── 메모리 캐시 (동기 읽기용) ──────────────────────────────────
+let _words     = [];
+let _sentences = [];
+let _settings  = { ...DEFAULT_SETTINGS };
+let _apiKey    = '';
 
-function seedIfEmpty() {
-  if (localStorage.getItem(KEY_WORDS) !== null) return;
-  const now = Date.now();
-  const words = SEED.map(({ word, pos, meaning, difficulty }, i) => ({
-    id: crypto.randomUUID(), word, pos, meaning, difficulty, createdAt: now + i
-  }));
-  const sentences = SEED.map((s, i) => ({
-    id: crypto.randomUUID(), wordId: words[i].id, en: s.en, ko: s.ko
-  }));
-  saveWords(words);
-  saveSentences(sentences);
+// ── IndexedDB (Claude API 키 로컬 보관) ───────────────────────
+let _idb = null;
+
+function _openIDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('zaf_local', 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore('kv', { keyPath: 'k' });
+    req.onsuccess = e => { _idb = e.target.result; resolve(); };
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+function _idbGet(key) {
+  return new Promise((resolve, reject) => {
+    const req = _idb.transaction('kv', 'readonly').objectStore('kv').get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+function _idbPut(item) {
+  return new Promise((resolve, reject) => {
+    const req = _idb.transaction('kv', 'readwrite').objectStore('kv').put(item);
+    req.onsuccess = resolve;
+    req.onerror   = () => reject(req.error);
+  });
 }
 
-function initSettings() {
-  if (localStorage.getItem(KEY_SETTINGS) === null) saveSettings({ ...DEFAULT_SETTINGS });
+// ── Firebase 전체 로드 ─────────────────────────────────────────
+async function _loadAll() {
+  try {
+    const snap = await _rtdb.ref('/').once('value');
+    const data = snap.val() ?? {};
+    _words     = data.words     ? Object.values(data.words)     : [];
+    _sentences = data.sentences ? Object.values(data.sentences) : [];
+    _settings  = data.settings  ? { ...DEFAULT_SETTINGS, ...data.settings } : { ...DEFAULT_SETTINGS };
+  } catch(e) {
+    console.error('Firebase 로드 실패:', e);
+  }
+  try {
+    const row = await _idbGet('apiKey');
+    _apiKey = row?.v ?? '';
+  } catch(e) { _apiKey = ''; }
 }
+
+// ── 배열 → Firebase 객체 변환 ─────────────────────────────────
+function _toObj(arr) {
+  if (!arr.length) return null;
+  const o = {};
+  arr.forEach(item => { o[item.id] = item; });
+  return o;
+}
+
+// ── 동기 접근자 (메모리 읽기) ──────────────────────────────────
+function getWords()     { return [..._words]; }
+function getSentences() { return [..._sentences]; }
+function getSettings()  { return { ..._settings }; }
+function getApiKey()    { return _apiKey; }
+
+// ── 저장 (메모리 즉시 반영 + Firebase 비동기 영속) ──────────────
+function saveWords(a)    { _words     = a; _rtdb.ref('/words').set(_toObj(a)).catch(console.error); }
+function saveSentences(a){ _sentences = a; _rtdb.ref('/sentences').set(_toObj(a)).catch(console.error); }
+function saveSettings(o) { _settings  = o; _rtdb.ref('/settings').set(o).catch(console.error); }
+function saveApiKey(k)   { _apiKey    = k; _idbPut({ k: 'apiKey', v: k }).catch(console.error); }
+
+// ── 단어 통계 부분 업데이트 (퀴즈 중 매 문제마다 호출, 최적화) ──
+function _patchWordStat(wordId) {
+  const w = _words.find(w => w.id === wordId);
+  if (w) _rtdb.ref(`/words/${wordId}`).set(w).catch(console.error);
+}
+
+// ── 퀴즈 결과 저장 ─────────────────────────────────────────────
+function saveQuizResult(payload) {
+  const id = crypto.randomUUID();
+  _rtdb.ref(`/quizResults/${id}`).set({ id, ...payload }).catch(console.error);
+}
+
+// ── 삭제 헬퍼 ─────────────────────────────────────────────────
+function clearWords()     { _words     = []; return _rtdb.ref('/words').remove(); }
+function clearSentences() { _sentences = []; return _rtdb.ref('/sentences').remove(); }
+function clearAll()       {
+  _words = []; _sentences = []; _settings = { ...DEFAULT_SETTINGS }; _apiKey = '';
+  _idbPut({ k: 'apiKey', v: '' }).catch(console.error);
+  return _rtdb.ref('/').remove();
+}
+
 
 /* ═══════════════════════════════════════════════════════════════
    Utilities
@@ -149,8 +207,9 @@ document.querySelectorAll('[data-close]').forEach(btn => {
 // Close on Escape
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  if (document.getElementById('word-modal').classList.contains('open')) closeModal('word-modal');
-  if (document.getElementById('sent-modal').classList.contains('open')) closeModal('sent-modal');
+  if (document.getElementById('word-modal').classList.contains('open'))        closeModal('word-modal');
+  if (document.getElementById('sent-modal').classList.contains('open'))        closeModal('sent-modal');
+  if (document.getElementById('study-edit-modal').classList.contains('open')) closeModal('study-edit-modal');
 });
 
 /* ═══════════════════════════════════════════════════════════════
@@ -175,7 +234,7 @@ function navigate() {
   if (target === 'home')             renderHome();
   if (target === 'quiz-word')        renderQuizSetup('qw-root', 'word');
   if (target === 'quiz-sentence')    renderQuizSetup('qs-root', 'sentence');
-  if (target === 'manage-words') renderWordTable();
+  if (target === 'manage-words') renderManage();
   if (target === 'settings')     renderSettings();
 }
 
@@ -197,6 +256,124 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
    ── WORD MANAGEMENT ──
 ═══════════════════════════════════════════════════════════════ */
 const mwState = { search: '', level: 'all', sortBy: 'date' };
+let _manageSubTab = 'words';
+const _selWords   = new Set();
+const _selSents   = new Set();
+
+// ── 서브탭 렌더 진입점 ──────────────────────────────────────────
+function renderManage() {
+  if (_manageSubTab === 'words') renderWordTable();
+  else renderSentenceTable();
+}
+
+function switchManageTab(tab) {
+  _manageSubTab = tab;
+  _selWords.clear();
+  _selSents.clear();
+
+  document.querySelectorAll('#manage-words .sub-tab').forEach(btn =>
+    btn.classList.toggle('active', btn.dataset.subtab === tab)
+  );
+
+  const isWords = tab === 'words';
+  document.getElementById('mw-filter-group')?.classList.toggle('hidden', !isWords);
+  document.getElementById('mw-sort-btn')?.classList.toggle('hidden', !isWords);
+  document.getElementById('mw-add-btn').textContent = isWords ? '+ 새 단어 추가' : '+ 새 예문 추가';
+  document.getElementById('mw-word-table').style.display = isWords ? '' : 'none';
+  document.getElementById('ms-sent-table').style.display = isWords ? 'none' : '';
+
+  updateBulkDeleteBtn();
+  if (isWords) renderWordTable();
+  else renderSentenceTable();
+}
+
+function updateBulkDeleteBtn() {
+  const btn   = document.getElementById('mw-bulk-delete');
+  if (!btn) return;
+  const count = _manageSubTab === 'words' ? _selWords.size : _selSents.size;
+  btn.style.display = count > 0 ? '' : 'none';
+  if (count > 0) btn.textContent = `선택 삭제 (${count})`;
+}
+
+// ── 예문 테이블 ───────────────────────────────────────────────
+function renderSentenceTable() {
+  const wordMap = new Map(getWords().map(w => [w.id, w]));
+  const q       = mwState.search.trim().toLowerCase();
+  let sents = getSentences();
+
+  if (q) {
+    sents = sents.filter(s => {
+      const w = wordMap.get(s.wordId);
+      return (w?.word ?? '').toLowerCase().includes(q)
+          || s.en.toLowerCase().includes(q)
+          || s.ko.includes(q);
+    });
+  }
+  sents.sort((a, b) => (wordMap.get(a.wordId)?.word ?? '').localeCompare(wordMap.get(b.wordId)?.word ?? ''));
+
+  document.getElementById('mw-count').textContent = `총 ${sents.length}개`;
+  const tbody = document.getElementById('ms-tbody');
+
+  if (!sents.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">${
+      getSentences().length === 0 ? '등록된 예문이 없습니다.' : '검색 결과가 없습니다.'
+    }</div></td></tr>`;
+    updateBulkDeleteBtn();
+    return;
+  }
+
+  tbody.innerHTML = sents.map((s, i) => {
+    const word = wordMap.get(s.wordId);
+    return `
+      <tr class="${_selSents.has(s.id) ? 'row-selected' : ''}">
+        <td class="col-chk">
+          <input type="checkbox" class="ms-row-chk" data-id="${escapeHtml(s.id)}" ${_selSents.has(s.id) ? 'checked' : ''} />
+        </td>
+        <td class="col-num">${i + 1}</td>
+        <td class="col-word"><strong>${escapeHtml(word?.word ?? '(삭제됨)')}</strong></td>
+        <td class="sent-en-cell">${escapeHtml(s.en)}</td>
+        <td class="sent-ko-cell">${escapeHtml(s.ko)}</td>
+        <td>
+          <div class="col-actions">
+            <button class="btn btn-ghost btn-sm" onclick="openSentenceModal('${escapeHtml(s.id)}','${escapeHtml(s.wordId)}')">수정</button>
+            <button class="btn btn-danger btn-sm" onclick="confirmDeleteSentRow('${escapeHtml(s.id)}','${escapeHtml(s.wordId)}')">삭제</button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+
+  document.querySelectorAll('#ms-tbody .ms-row-chk').forEach(chk => {
+    chk.addEventListener('change', function() {
+      const id = this.dataset.id;
+      if (this.checked) _selSents.add(id);
+      else _selSents.delete(id);
+      this.closest('tr')?.classList.toggle('row-selected', this.checked);
+      updateBulkDeleteBtn();
+      _syncChkAll('ms-chk-all', document.querySelectorAll('#ms-tbody .ms-row-chk'));
+    });
+  });
+
+  updateBulkDeleteBtn();
+  _syncChkAll('ms-chk-all', document.querySelectorAll('#ms-tbody .ms-row-chk'));
+}
+
+function confirmDeleteSentRow(sentId, wordId) {
+  if (!confirm('이 예문을 삭제할까요?')) return;
+  saveSentences(getSentences().filter(s => s.id !== sentId));
+  _selSents.delete(sentId);
+  renderSentRow(wordId);
+  updateSentBadge(wordId);
+  renderSentenceTable();
+}
+
+function _syncChkAll(chkId, rowChks) {
+  const el = document.getElementById(chkId);
+  if (!el) return;
+  const total = rowChks.length;
+  const checked = [...rowChks].filter(c => c.checked).length;
+  el.checked = total > 0 && checked === total;
+  el.indeterminate = checked > 0 && checked < total;
+}
 
 function getFilteredWords() {
   const sents = getSentences();
@@ -222,17 +399,21 @@ function renderWordTable() {
   if (!list.length) {
     const noWords = getWords().length === 0;
     tbody.innerHTML = noWords
-      ? `<tr><td colspan="7"><div class="empty-state">
+      ? `<tr><td colspan="8"><div class="empty-state">
            <div style="font-size:32px;margin-bottom:10px">📚</div>
            아직 단어가 없습니다. 첫 단어를 추가해보세요!<br>
            <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="openWordModal(null)">+ 첫 단어 추가</button>
          </div></td></tr>`
-      : `<tr><td colspan="7"><div class="empty-state">검색 결과가 없습니다.</div></td></tr>`;
+      : `<tr><td colspan="8"><div class="empty-state">검색 결과가 없습니다.</div></td></tr>`;
+    updateBulkDeleteBtn();
     return;
   }
 
   tbody.innerHTML = list.map((w, i) => `
-    <tr>
+    <tr class="${_selWords.has(w.id) ? 'row-selected' : ''}">
+      <td class="col-chk">
+        <input type="checkbox" class="mw-row-chk" data-id="${escapeHtml(w.id)}" ${_selWords.has(w.id) ? 'checked' : ''} />
+      </td>
       <td class="col-num">${i+1}</td>
       <td><strong>${escapeHtml(w.word)}</strong></td>
       <td><span class="badge badge-pos">${escapeHtml(POS_LABEL[w.pos] ?? w.pos)}</span></td>
@@ -250,11 +431,25 @@ function renderWordTable() {
       </td>
     </tr>
     <tr class="sent-subrow" id="sent-subrow-${escapeHtml(w.id)}" style="display:none">
-      <td colspan="7" class="sent-subrow-cell">
+      <td colspan="8" class="sent-subrow-cell">
         <div id="sent-subrow-content-${escapeHtml(w.id)}"></div>
       </td>
     </tr>
   `).join('');
+
+  document.querySelectorAll('#mw-tbody .mw-row-chk').forEach(chk => {
+    chk.addEventListener('change', function() {
+      const id = this.dataset.id;
+      if (this.checked) _selWords.add(id);
+      else _selWords.delete(id);
+      this.closest('tr')?.classList.toggle('row-selected', this.checked);
+      updateBulkDeleteBtn();
+      _syncChkAll('mw-chk-all', document.querySelectorAll('#mw-tbody .mw-row-chk'));
+    });
+  });
+
+  updateBulkDeleteBtn();
+  _syncChkAll('mw-chk-all', document.querySelectorAll('#mw-tbody .mw-row-chk'));
 }
 
 // ── Word Modal ──────────────────────────────────────────────
@@ -329,15 +524,69 @@ function confirmDeleteWord(id) {
   if (!confirm(msg)) return;
   saveWords(getWords().filter(w => w.id !== id));
   saveSentences(getSentences().filter(s => s.wordId !== id));
+  _selWords.delete(id);
   renderWordTable();
 }
 
 // ── Toolbar events ──────────────────────────────────────────
-document.getElementById('mw-add-btn').addEventListener('click', () => openWordModal(null));
+document.getElementById('mw-add-btn').addEventListener('click', () => {
+  if (_manageSubTab === 'words') openWordModal(null);
+  else openSentenceModal(null, null);
+});
 
 document.getElementById('mw-search').addEventListener('input', function() {
   mwState.search = this.value;
-  renderWordTable();
+  renderManage();
+});
+
+document.querySelector('#manage-words .sub-tab-bar').addEventListener('click', e => {
+  const btn = e.target.closest('.sub-tab');
+  if (btn) switchManageTab(btn.dataset.subtab);
+});
+
+document.getElementById('mw-chk-all').addEventListener('change', function() {
+  document.querySelectorAll('#mw-tbody .mw-row-chk').forEach(chk => {
+    chk.checked = this.checked;
+    if (this.checked) _selWords.add(chk.dataset.id);
+    else _selWords.delete(chk.dataset.id);
+    chk.closest('tr')?.classList.toggle('row-selected', this.checked);
+  });
+  updateBulkDeleteBtn();
+});
+
+document.getElementById('ms-chk-all').addEventListener('change', function() {
+  document.querySelectorAll('#ms-tbody .ms-row-chk').forEach(chk => {
+    chk.checked = this.checked;
+    if (this.checked) _selSents.add(chk.dataset.id);
+    else _selSents.delete(chk.dataset.id);
+    chk.closest('tr')?.classList.toggle('row-selected', this.checked);
+  });
+  updateBulkDeleteBtn();
+});
+
+document.getElementById('mw-bulk-delete').addEventListener('click', () => {
+  if (_manageSubTab === 'words') {
+    const count = _selWords.size;
+    if (!count) return;
+    const linked = getSentences().filter(s => _selWords.has(s.wordId)).length;
+    const msg = linked
+      ? `단어 ${count}개와 연결된 예문 ${linked}개를 모두 삭제합니다. 계속하시겠습니까?`
+      : `선택한 단어 ${count}개를 삭제합니다. 계속하시겠습니까?`;
+    if (!confirm(msg)) return;
+    saveWords(getWords().filter(w => !_selWords.has(w.id)));
+    saveSentences(getSentences().filter(s => !_selWords.has(s.wordId)));
+    _selWords.clear();
+    renderWordTable();
+    showToast(`단어 ${count}개가 삭제되었습니다.`);
+  } else {
+    const count = _selSents.size;
+    if (!count) return;
+    if (!confirm(`선택한 예문 ${count}개를 삭제합니다. 계속하시겠습니까?`)) return;
+    saveSentences(getSentences().filter(s => !_selSents.has(s.id)));
+    _selSents.clear();
+    renderSentenceTable();
+    showToast(`예문 ${count}개가 삭제되었습니다.`);
+  }
 });
 
 document.querySelectorAll('#manage-words .filter-btn').forEach(btn => {
@@ -486,7 +735,7 @@ document.getElementById('mw-upload-input').addEventListener('change', async func
   try {
     const rows   = await readFileAsRows(file);
     const result = importCombinedRows(rows);
-    renderWordTable();
+    renderManage();
     const parts = [];
     if (result.words > 0) parts.push(`단어 ${result.words}개`);
     if (result.sents > 0) parts.push(`예문 ${result.sents}개`);
@@ -562,6 +811,7 @@ function updateSentBadge(wordId) {
 
 function deleteSentenceInRow(sentId, wordId) {
   saveSentences(getSentences().filter(s => s.id !== sentId));
+  _selSents.delete(sentId);
   renderSentRow(wordId);
   updateSentBadge(wordId);
 }
@@ -571,6 +821,9 @@ function openSentenceModal(id, wordId) {
   clearSmErrors();
   document.getElementById('sm-title').textContent = id ? '예문 수정' : '예문 추가';
 
+  const wordField  = document.getElementById('sm-word-field');
+  const wordSelect = document.getElementById('sm-word-select');
+
   if (id) {
     const s = getSentences().find(s => s.id === id);
     if (!s) return;
@@ -578,19 +831,34 @@ function openSentenceModal(id, wordId) {
     document.getElementById('sm-wordid').value = s.wordId;
     document.getElementById('sm-en').value     = s.en;
     document.getElementById('sm-ko').value     = s.ko;
-  } else {
+    wordField.style.display = 'none';
+  } else if (wordId) {
     document.getElementById('sm-id').value     = '';
-    document.getElementById('sm-wordid').value = wordId ?? '';
+    document.getElementById('sm-wordid').value = wordId;
     document.getElementById('sm-en').value     = '';
     document.getElementById('sm-ko').value     = '';
+    wordField.style.display = 'none';
+  } else {
+    // 예문 탭에서 추가 — 단어 선택 드롭다운 표시
+    document.getElementById('sm-id').value     = '';
+    document.getElementById('sm-wordid').value = '';
+    document.getElementById('sm-en').value     = '';
+    document.getElementById('sm-ko').value     = '';
+    wordField.style.display = '';
+    const words = getWords().sort((a, b) => a.word.localeCompare(b.word));
+    wordSelect.innerHTML = words.length
+      ? '<option value="">— 단어 선택 —</option>' +
+        words.map(w => `<option value="${escapeHtml(w.id)}">${escapeHtml(w.word)} (${escapeHtml(w.meaning)})</option>`).join('')
+      : '<option value="">등록된 단어가 없습니다</option>';
   }
+
   openModal('sent-modal');
   document.getElementById('sm-en').focus();
 }
 
 function clearSmErrors() {
   ['sm-en','sm-ko'].forEach(id => document.getElementById(id).classList.remove('is-err'));
-  ['sm-en-err','sm-ko-err'].forEach(id => { document.getElementById(id).textContent = ''; });
+  ['sm-en-err','sm-ko-err','sm-word-err'].forEach(id => { document.getElementById(id).textContent = ''; });
 }
 
 document.getElementById('sm-save').addEventListener('click', () => {
@@ -602,9 +870,17 @@ document.getElementById('sm-save').addEventListener('click', () => {
   if (!ko) { document.getElementById('sm-ko').classList.add('is-err'); document.getElementById('sm-ko-err').textContent = '한국어해석을 입력해주세요.'; ok = false; }
   if (!ok) return;
 
-  const id     = document.getElementById('sm-id').value;
-  const wordId = document.getElementById('sm-wordid').value;
-  const sents  = getSentences();
+  const id    = document.getElementById('sm-id').value;
+  const wf    = document.getElementById('sm-word-field');
+  const fromSentTable = wf && wf.style.display !== 'none';
+  let wordId  = document.getElementById('sm-wordid').value;
+
+  if (fromSentTable) {
+    wordId = document.getElementById('sm-word-select').value;
+    if (!wordId) { document.getElementById('sm-word-err').textContent = '단어를 선택해주세요.'; return; }
+  }
+
+  const sents = getSentences();
 
   if (id) {
     const idx = sents.findIndex(s => s.id === id);
@@ -619,6 +895,7 @@ document.getElementById('sm-save').addEventListener('click', () => {
   closeModal('sent-modal');
   renderSentRow(wordId);
   updateSentBadge(wordId);
+  if (fromSentTable || _manageSubTab === 'sentences') renderSentenceTable();
   showToast('예문이 저장되었습니다.');
 });
 
@@ -679,7 +956,8 @@ document.addEventListener('click', () => {
 /* ═══════════════════════════════════════════════════════════════
    ── QUIZ ENGINE ──
 ═══════════════════════════════════════════════════════════════ */
-let qzSession = null;   // active quiz session
+let qzSession  = null;   // active quiz session
+let _seContext = null;   // { wordId, sentId? } — 학습 중 수정 대상
 
 // ── Weight Algorithm ──────────────────────────────────────────
 function calcWeight(word) {
@@ -808,7 +1086,7 @@ function startQuiz(rootId, quizType, mode, level, count, quizMode = 'multiple') 
     const items  = chosen.map(w => {
       const ws = allSents.filter(s => s.wordId === w.id);
       const s  = ws[Math.floor(Math.random() * ws.length)];
-      return { wordId: w.id, word: w.word, meaning: w.meaning, en: s.en, ko: s.ko };
+      return { wordId: w.id, sentId: s.id, word: w.word, meaning: w.meaning, en: s.en, ko: s.ko };
     });
     qzSession = { rootId, quizType, mode, level, count, quizMode, items, current: 0, results: [] };
   }
@@ -845,8 +1123,11 @@ function renderQuestion() {
     </div>`;
   const cardHtml = `
     <div class="qz-card" id="qz-card">
-      <div class="qz-prompt-label">${escapeHtml(promptLabel)}</div>
-      <div class="${promptCls}">${escapeHtml(prompt)}</div>
+      <div class="qz-card-top">
+        <span class="qz-prompt-label">${escapeHtml(promptLabel)}</span>
+        <button class="qz-edit-btn" onclick="openStudyEdit()" aria-label="수정하기">✏ 수정</button>
+      </div>
+      <div class="${promptCls}" id="qz-prompt-text">${escapeHtml(prompt)}</div>
     </div>`;
 
   if (quizMode === 'subjective') {
@@ -955,7 +1236,6 @@ function handleChoice(clickedIdx, isCorrect, answerId, corrIdx) {
   fb.textContent = isCorrect ? '정답!' : '오답';
   fb.className   = 'qz-feedback ' + (isCorrect ? 'correct' : 'wrong');
 
-  // Update stats in localStorage immediately
   updateWordStats(answerId, isCorrect);
 
   // Record result
@@ -974,26 +1254,120 @@ function handleChoice(clickedIdx, isCorrect, answerId, corrIdx) {
   }, 1200);
 }
 
+// ── 학습 중 수정 ───────────────────────────────────────────────
+function openStudyEdit() {
+  if (!qzSession) return;
+  const { quizType, words, items, current } = qzSession;
+  const isSent = quizType === 'sentence';
+
+  if (!isSent) {
+    const w = words[current];
+    _seContext = { wordId: w.id, sentId: null };
+    document.getElementById('se-word').value    = w.word;
+    document.getElementById('se-meaning').value = w.meaning;
+  } else {
+    const it = items[current];
+    _seContext = { wordId: it.wordId, sentId: it.sentId ?? null };
+    const w = _words.find(w => w.id === it.wordId);
+    document.getElementById('se-word').value    = w?.word    ?? it.word;
+    document.getElementById('se-meaning').value = w?.meaning ?? it.meaning;
+    document.getElementById('se-en').value      = it.en;
+    document.getElementById('se-ko').value      = it.ko;
+  }
+
+  document.getElementById('se-sent-block').style.display = isSent ? '' : 'none';
+  openModal('study-edit-modal');
+  document.getElementById('se-word').focus();
+}
+
+function _refreshQuizPrompt() {
+  if (!qzSession) return;
+  const { quizType, mode, current, words, items } = qzSession;
+  let prompt;
+  if (quizType === 'word') {
+    const w = words[current];
+    prompt = mode === 'word-en-ko' ? w.word : w.meaning;
+  } else {
+    const it = items[current];
+    prompt = mode === 'sentence-en-ko' ? it.en : it.ko;
+  }
+  const el = document.getElementById('qz-prompt-text');
+  if (el) el.textContent = prompt;
+}
+
+document.getElementById('se-save').addEventListener('click', () => {
+  if (!_seContext) return;
+
+  const wordVal    = document.getElementById('se-word').value.trim();
+  const meaningVal = document.getElementById('se-meaning').value.trim();
+  if (!wordVal)    { showToast('영어단어를 입력해주세요.'); return; }
+  if (!meaningVal) { showToast('한국어뜻을 입력해주세요.'); return; }
+
+  // 단어 저장
+  const words = getWords();
+  const wIdx  = words.findIndex(w => w.id === _seContext.wordId);
+  if (wIdx >= 0) {
+    words[wIdx] = { ...words[wIdx], word: wordVal, meaning: meaningVal };
+    saveWords(words);
+  }
+
+  // 예문 저장
+  const hasSent = document.getElementById('se-sent-block').style.display !== 'none';
+  if (hasSent && _seContext.sentId) {
+    const en = document.getElementById('se-en').value.trim();
+    const ko = document.getElementById('se-ko').value.trim();
+    if (!en || !ko) { showToast('영어예문과 한국어해석을 모두 입력해주세요.'); return; }
+    const sents = getSentences();
+    const sIdx  = sents.findIndex(s => s.id === _seContext.sentId);
+    if (sIdx >= 0) {
+      sents[sIdx] = { ...sents[sIdx], en, ko };
+      saveSentences(sents);
+    }
+    // 퀴즈 세션 메모리 업데이트
+    if (qzSession?.items) {
+      const it = qzSession.items[qzSession.current];
+      if (it?.wordId === _seContext.wordId) {
+        qzSession.items[qzSession.current] = { ...it, word: wordVal, meaning: meaningVal, en, ko };
+      }
+    }
+  } else if (qzSession?.words) {
+    const w = qzSession.words[qzSession.current];
+    if (w?.id === _seContext.wordId) {
+      qzSession.words[qzSession.current] = { ...w, word: wordVal, meaning: meaningVal };
+    }
+  }
+
+  closeModal('study-edit-modal');
+  _refreshQuizPrompt();
+  showToast('수정되었습니다.');
+});
+
 // ── Update Word Stats ──────────────────────────────────────────
 function updateWordStats(wordId, correct) {
-  const words = getWords();
-  const idx   = words.findIndex(w => w.id === wordId);
+  const idx = _words.findIndex(w => w.id === wordId);
   if (idx < 0) return;
-  const s = words[idx].stats ?? { shown: 0, correct: 0 };
+  const s = _words[idx].stats ?? { shown: 0, correct: 0 };
   s.shown++;
   if (correct) s.correct++;
-  words[idx] = { ...words[idx], stats: s };
-  saveWords(words);
+  _words[idx] = { ..._words[idx], stats: s };
+  _patchWordStat(wordId);
 }
 
 // ── Render Result ──────────────────────────────────────────────
 function renderResult() {
   updateStreak();
 
-  const { rootId, quizType, mode, level, count, results } = qzSession;
+  const { rootId, quizType, mode, level, count, quizMode, results } = qzSession;
   const total      = results.length;
   const correctCnt = results.filter(r => r.correct).length;
   const pct        = total ? Math.round(correctCnt / total * 100) : 0;
+
+  saveQuizResult({
+    date:         new Date().toISOString(),
+    quizType, mode, quizMode,
+    total, correct: correctCnt, pct,
+    wrongWordIds: [...new Set(results.filter(r => !r.correct).map(r => r.wordId))]
+  });
 
   const wrongIds  = [...new Set(results.filter(r => !r.correct).map(r => r.wordId))];
   const allWords  = getWords();
@@ -1194,7 +1568,7 @@ function renderSettings() {
           <button class="btn btn-ghost" id="s-key-toggle" aria-label="API 키 표시 또는 숨김">표시</button>
         </div>
         <span style="font-size:11px;color:var(--text-muted);margin-top:4px;display:block">
-          키는 이 브라우저의 로컬 스토리지에만 저장됩니다.
+          키는 이 기기에만 저장됩니다. Firebase에 업로드되지 않습니다.
         </span>
       </div>
       <button class="btn btn-primary" id="s-key-save" style="margin-top:12px" aria-label="API 키 저장">저장</button>
@@ -1391,7 +1765,7 @@ function renderSettings() {
     const count = getWords().length;
     if (!count) { showToast('삭제할 단어가 없습니다.'); return; }
     if (!confirm(`단어 ${count}개를 모두 삭제합니다. 되돌릴 수 없습니다.\n계속하시겠습니까?`)) return;
-    localStorage.removeItem(KEY_WORDS);
+    clearWords();
     showToast('단어가 모두 삭제되었습니다.');
     renderSettings();
   });
@@ -1401,7 +1775,7 @@ function renderSettings() {
     const count = getSentences().length;
     if (!count) { showToast('삭제할 예문이 없습니다.'); return; }
     if (!confirm(`예문 ${count}개를 모두 삭제합니다. 되돌릴 수 없습니다.\n계속하시겠습니까?`)) return;
-    localStorage.removeItem(KEY_SENTENCES);
+    clearSentences();
     showToast('예문이 모두 삭제되었습니다.');
     renderSettings();
   });
@@ -1410,8 +1784,7 @@ function renderSettings() {
   document.getElementById('s-reset-all').addEventListener('click', () => {
     if (!confirm('모든 데이터가 삭제됩니다. 되돌릴 수 없습니다.\n계속하시겠습니까?')) return;
     if (!confirm('정말로 모든 데이터를 삭제하시겠습니까?')) return;
-    [KEY_WORDS, KEY_SENTENCES, KEY_SETTINGS, KEY_API_KEY].forEach(k => localStorage.removeItem(k));
-    location.reload();
+    clearAll().finally(() => location.reload());
   });
 }
 
@@ -1475,9 +1848,22 @@ async function generateExamples(word, meaning, pos) {
 /* ═══════════════════════════════════════════════════════════════
    Boot
 ═══════════════════════════════════════════════════════════════ */
-window.addEventListener('DOMContentLoaded', () => {
-  seedIfEmpty();
-  initSettings();
+async function _clearDataOnce() {
+  try {
+    const snap = await _rtdb.ref('/__meta/cleared_v3').once('value');
+    if (!snap.val()) {
+      await _rtdb.ref('/words').remove();
+      await _rtdb.ref('/sentences').remove();
+      _words = []; _sentences = [];
+      await _rtdb.ref('/__meta/cleared_v3').set(true);
+    }
+  } catch(e) { console.error('초기화 오류:', e); }
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  await _openIDB();
+  await _loadAll();
+  await _clearDataOnce();
   navigate();
 });
 window.addEventListener('hashchange', navigate);

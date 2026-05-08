@@ -641,3 +641,87 @@
       padding-top: 10px; margin-top: 8px; border-top: 1px solid var(--border);
     }
     .sent-subrow-count { font-size: 12px; color: var(--text-muted); }
+
+    /* ─── Sub-tab Bar ─── */
+    .sub-tab-bar {
+      display: flex;
+      gap: 0;
+      padding: 0 16px;
+      border-bottom: 2px solid var(--border);
+      margin: 4px 0 0;
+    }
+    .sub-tab {
+      padding: 8px 18px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color .12s, border-color .12s;
+    }
+    .sub-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+    .sub-tab:hover:not(.active) { color: var(--text); }
+
+    /* ─── Checkbox column ─── */
+    .col-chk { width: 36px; text-align: center; padding: 0 4px !important; }
+    .col-chk input[type="checkbox"] {
+      width: 15px; height: 15px; cursor: pointer; accent-color: var(--primary);
+      vertical-align: middle;
+    }
+    .col-word { min-width: 90px; }
+
+    /* ─── Selected row highlight ─── */
+    tr.row-selected > td { background: #eef2ff !important; }
+
+    /* ─── Sentence table cells ─── */
+    .sent-en-cell { font-size: 13px; font-weight: 500; }
+    .sent-ko-cell { font-size: 12px; color: var(--text-muted); }
+
+    /* ─── Section meta bulk-delete layout ─── */
+    .section-meta { display: flex; align-items: center; gap: 10px; }
+
+    /* ─── Utility ─── */
+    .hidden { display: none !important; }
+
+    /* ─── Quiz Card Edit Button ─── */
+    .qz-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .qz-edit-btn {
+      border: 1px solid var(--border);
+      background: var(--bg);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      padding: 3px 9px;
+      border-radius: 5px;
+      transition: color .12s, border-color .12s, background .12s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .qz-edit-btn:hover {
+      color: var(--primary);
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    /* ─── Study Edit Modal ─── */
+    .se-divider {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: 8px 0 4px;
+      border-top: 1px solid var(--border);
+      margin-top: 4px;
+    }
+    .se-word-block { display: flex; flex-direction: column; gap: 0; }
+    .se-sent-block { display: flex; flex-direction: column; gap: 0; }
