@@ -131,15 +131,37 @@ function showToast(msg) {
   _toastTimer = setTimeout(() => el.classList.remove('show'), 1600);
 }
 
+/* TTS — 음성 품질 점수 (높을수록 자연스러움) */
+function _voiceQuality(v) {
+  const n = v.name.toLowerCase();
+  // Neural / Natural (Edge neural, Google neural)
+  if (/neural|natural|wavenet/.test(n))                           return 4;
+  // Enhanced / Premium (iOS Enhanced, macOS Enhanced)
+  if (/enhanced|premium/.test(n))                                 return 3;
+  // Online voices (Google online, MS online non-neural)
+  if (!v.localService)                                            return 2;
+  // Known good local voices (macOS Samantha, Alex, Karen, Daniel...)
+  if (/samantha|alex|karen|daniel|moira|fiona|victoria/.test(n)) return 1;
+  return 0;
+}
+
+function _bestEnglishVoice() {
+  const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+  return voices.sort((a, b) => _voiceQuality(b) - _voiceQuality(a))[0] ?? null;
+}
+
 /* TTS 재생 */
 function speakText(text, voiceName) {
   if (!window.speechSynthesis) return;
   speechSynthesis.cancel();
   const utt = new SpeechSynthesisUtterance(text);
-  if (voiceName) {
-    const v = speechSynthesis.getVoices().find(v => v.name === voiceName);
-    if (v) utt.voice = v;
-  }
+  const voices = speechSynthesis.getVoices();
+  let voice = voiceName ? voices.find(v => v.name === voiceName) : null;
+  if (!voice) voice = _bestEnglishVoice();
+  if (voice) utt.voice = voice;
+  utt.rate  = 0.88; // 약간 느리게 — 발음이 명확하고 자연스러워짐
+  utt.pitch = 1.0;
+  utt.volume = 1.0;
   speechSynthesis.speak(utt);
 }
 
@@ -413,7 +435,11 @@ function getFilteredWords() {
   } else {
     list.sort((a,b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
   }
-  return list.map(w => ({ ...w, _sc: sentCountOf(w.id, sents) }));
+  return list.map(w => ({
+    ...w,
+    _sc:   sentCountOf(w.id, sents),
+    _wsrc: w.source || (sents.find(s => s.wordId === w.id && s.source)?.source ?? ''),
+  }));
 }
 
 function renderWordTable() {
@@ -424,12 +450,12 @@ function renderWordTable() {
   if (!list.length) {
     const noWords = getWords().length === 0;
     tbody.innerHTML = noWords
-      ? `<tr><td colspan="8"><div class="empty-state">
+      ? `<tr><td colspan="7"><div class="empty-state">
            <div style="font-size:32px;margin-bottom:10px">📚</div>
            아직 단어가 없습니다. 첫 단어를 추가해보세요!<br>
            <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="openWordModal(null)">+ 첫 단어 추가</button>
          </div></td></tr>`
-      : `<tr><td colspan="8"><div class="empty-state">검색 결과가 없습니다.</div></td></tr>`;
+      : `<tr><td colspan="7"><div class="empty-state">검색 결과가 없습니다.</div></td></tr>`;
     updateBulkDeleteBtn();
     return;
   }
@@ -446,12 +472,8 @@ function renderWordTable() {
           <button class="tts-btn" onclick="speakById('word','${escapeHtml(w.id)}')" aria-label="발음 듣기" title="발음 듣기">🔊</button>
         </div>
       </td>
-      <td><span class="badge badge-pos">${escapeHtml(POS_LABEL[w.pos] ?? w.pos)}</span></td>
-      <td>
-        ${escapeHtml(w.meaning)}
-        ${w.source ? `<div class="word-source">출처: ${escapeHtml(w.source)}</div>` : ''}
-      </td>
-      <td><span class="badge badge-${escapeHtml(w.difficulty)}">${escapeHtml(LEVEL_LABEL[w.difficulty] ?? w.difficulty)}</span></td>
+      <td>${escapeHtml(w.meaning)}</td>
+      <td class="sent-source-cell">${w._wsrc ? escapeHtml(w._wsrc) : ''}</td>
       <td>
         <button class="sent-toggle-btn" id="sent-badge-${escapeHtml(w.id)}"
           onclick="toggleSentRow('${escapeHtml(w.id)}')">예문 ${w._sc}</button>
@@ -464,7 +486,7 @@ function renderWordTable() {
       </td>
     </tr>
     <tr class="sent-subrow" id="sent-subrow-${escapeHtml(w.id)}" style="display:none">
-      <td colspan="8" class="sent-subrow-cell">
+      <td colspan="7" class="sent-subrow-cell">
         <div id="sent-subrow-content-${escapeHtml(w.id)}"></div>
       </td>
     </tr>
@@ -834,6 +856,7 @@ const _aiExamples = new Map();
 function renderSentRow(wordId) {
   const content = document.getElementById(`sent-subrow-content-${wordId}`);
   if (!content) return;
+  const word    = getWords().find(w => w.id === wordId);
   const sents   = getSentences().filter(s => s.wordId === wordId);
   const atLimit = sents.length >= 5;
 
@@ -858,6 +881,7 @@ function renderSentRow(wordId) {
 
   content.innerHTML = `
     <div class="sent-subrow-inner">
+      ${(() => { const src = word?.source || sents.find(s => s.source)?.source || ''; return src ? `<div class="sent-subrow-source">출처: ${escapeHtml(src)}</div>` : ''; })()}
       ${listHtml}
       <div class="sent-subrow-footer">
         <span class="sent-subrow-count">예문 ${sents.length} / 5</span>
@@ -1165,7 +1189,7 @@ function startQuiz(rootId, quizType, mode, level, count, quizMode = 'multiple') 
     const items  = chosen.map(w => {
       const ws = allSents.filter(s => s.wordId === w.id);
       const s  = ws[Math.floor(Math.random() * ws.length)];
-      return { wordId: w.id, sentId: s.id, word: w.word, meaning: w.meaning, en: s.en, ko: s.ko };
+      return { wordId: w.id, sentId: s.id, word: w.word, meaning: w.meaning, en: s.en, ko: s.ko, source: s.source ?? '' };
     });
     qzSession = { rootId, quizType, mode, level, count, quizMode, items, current: 0, results: [] };
   }
@@ -1178,16 +1202,18 @@ function renderQuestion() {
   const total = quizType === 'word' ? words.length : items.length;
   const pct   = Math.round((current / total) * 100);
 
-  let prompt, promptLabel, correct, answerId, isLong = false;
+  let prompt, promptLabel, correct, answerId, isLong = false, sourceText = '';
   if (quizType === 'word') {
     const w = words[current];
-    answerId = w.id;
+    answerId   = w.id;
+    sourceText = w.source || (getSentences().find(s => s.wordId === w.id && s.source)?.source ?? '');
     if (mode === 'word-en-ko') { prompt = w.word;    promptLabel = '영어 단어';   correct = w.meaning; }
     else                       { prompt = w.meaning; promptLabel = '한국어 뜻';   correct = w.word;    }
   } else {
     const it = items[current];
-    answerId  = it.wordId;
-    isLong    = true;
+    answerId   = it.wordId;
+    isLong     = true;
+    sourceText = it.source ?? '';
     if (mode === 'sentence-en-ko') { prompt = it.en; promptLabel = '영어 예문';   correct = it.ko; }
     else                           { prompt = it.ko; promptLabel = '한국어 해석'; correct = it.en; }
   }
@@ -1210,6 +1236,7 @@ function renderQuestion() {
         </div>
       </div>
       <div class="${promptCls}" id="qz-prompt-text">${escapeHtml(prompt)}</div>
+      ${sourceText ? `<div class="qz-source">출처: ${escapeHtml(sourceText)}</div>` : ''}
     </div>`;
 
   if (quizMode === 'subjective') {
@@ -1261,12 +1288,14 @@ function renderQuestion() {
               <span>${escapeHtml(c)}</span>
             </button>`).join('')}
         </div>
+        <button class="qz-dontknow-btn" id="qz-dontknow">모름</button>
         <div class="qz-feedback" id="qz-feedback"></div>
       </div>`;
 
     document.querySelectorAll('#qz-choices .qz-choice').forEach((btn, i) => {
       btn.addEventListener('click', () => handleChoice(i, i === corrIdx, answerId, corrIdx));
     });
+    document.getElementById('qz-dontknow').addEventListener('click', () => handleDontKnow(answerId, corrIdx));
   }
 }
 
@@ -1324,6 +1353,36 @@ function handleChoice(clickedIdx, isCorrect, answerId, corrIdx) {
   qzSession.results.push({ wordId: answerId, correct: isCorrect });
 
   // Fade → next after 1.2 s
+  setTimeout(() => {
+    const card = document.getElementById('qz-card');
+    if (card) card.classList.add('fading');
+    setTimeout(() => {
+      qzSession.current++;
+      const total = qzSession.quizType === 'word' ? qzSession.words.length : qzSession.items.length;
+      if (qzSession.current >= total) renderResult();
+      else                            renderQuestion();
+    }, 280);
+  }, 1200);
+}
+
+// ── 모름 버튼 ────────────────────────────────────────────────
+function handleDontKnow(answerId, corrIdx) {
+  document.querySelectorAll('.qz-choice').forEach(b => {
+    b.disabled = true;
+    b.style.pointerEvents = 'none';
+  });
+  const dk = document.getElementById('qz-dontknow');
+  if (dk) { dk.disabled = true; dk.classList.add('used'); }
+
+  document.querySelectorAll('.qz-choice')[corrIdx]?.classList.add('correct');
+
+  const fb = document.getElementById('qz-feedback');
+  fb.textContent = '모름';
+  fb.className   = 'qz-feedback wrong';
+
+  updateWordStats(answerId, false);
+  qzSession.results.push({ wordId: answerId, correct: false });
+
   setTimeout(() => {
     const card = document.getElementById('qz-card');
     if (card) card.classList.add('fading');
@@ -1509,6 +1568,10 @@ document.addEventListener('keydown', e => {
   if (!choices.length) return;
   const n = parseInt(e.key, 10);
   if (n >= 1 && n <= 4 && choices[n - 1]) { e.preventDefault(); choices[n - 1].click(); }
+  if (e.key === '0' || e.key.toLowerCase() === 'm') {
+    const dk = document.getElementById('qz-dontknow');
+    if (dk && !dk.disabled) { e.preventDefault(); dk.click(); }
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1708,18 +1771,28 @@ function renderSettings() {
     r.addEventListener('change', () => { saveCfg('quizMode', r.value); showToast('설정이 저장되었습니다.'); });
   });
 
-  // TTS 음성 목록 로드
+  // TTS 음성 목록 로드 (품질순 정렬)
   function loadVoices() {
-    const voices = (speechSynthesis.getVoices() || []).filter(v => v.lang.startsWith('en'));
-    const sel    = document.getElementById('s-voice');
+    const sel = document.getElementById('s-voice');
     if (!sel) return;
+    const all    = (speechSynthesis.getVoices() || []).filter(v => v.lang.startsWith('en'));
     const saved  = getSettings().voiceName;
-    sel.innerHTML = voices.length
-      ? '<option value="">-- 선택 --</option>' +
-        voices.map(v =>
-          `<option value="${escapeHtml(v.name)}"${v.name === saved ? ' selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
-        ).join('')
+    const sorted = [...all].sort((a, b) => _voiceQuality(b) - _voiceQuality(a));
+
+    const QLABEL = { 4: '🌟 Neural', 3: '✨ Enhanced', 2: '☁️ Online', 1: '💻 Local', 0: '💻 Local' };
+    sel.innerHTML = sorted.length
+      ? sorted.map(v => {
+          const ql  = QLABEL[_voiceQuality(v)] ?? '';
+          const sel = v.name === saved ? ' selected' : '';
+          return `<option value="${escapeHtml(v.name)}"${sel}>[${ql}] ${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`;
+        }).join('')
       : '<option value="">사용 가능한 음성 없음</option>';
+
+    // 저장된 음성이 없으면 최상위 음성 자동 선택
+    if (!saved && sorted.length) {
+      sel.value = sorted[0].name;
+      saveCfg('voiceName', sorted[0].name);
+    }
   }
   loadVoices();
   if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices;
@@ -1731,7 +1804,7 @@ function renderSettings() {
   });
   document.getElementById('s-voice-test').addEventListener('click', () => {
     const v = document.getElementById('s-voice').value || getSettings().voiceName;
-    speakText('Hello, this is a test.', v);
+    speakText('Hello! Nice to meet you. How are you today?', v);
   });
 
   // API 키 표시/숨김

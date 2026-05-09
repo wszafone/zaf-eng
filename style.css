@@ -677,8 +677,12 @@
     tr.row-selected > td { background: #eef2ff !important; }
 
     /* ─── Sentence table cells ─── */
-    .sent-en-cell { font-size: 13px; font-weight: 500; }
-    .sent-ko-cell { font-size: 12px; color: var(--text-muted); }
+    .col-sent-en { width: 30%; }
+    .col-sent-ko { width: 25%; }
+    .col-act     { width: 1px; white-space: nowrap; }
+    .sent-en-cell { font-size: 13px; font-weight: 500; word-break: break-word; max-width: 280px; }
+    .sent-ko-cell { font-size: 12px; color: var(--text-muted); word-break: break-word; max-width: 220px; }
+    .col-actions  { white-space: nowrap; }
 
     /* ─── Section meta bulk-delete layout ─── */
     .section-meta { display: flex; align-items: center; gap: 10px; }
@@ -730,8 +734,7 @@
     .field-opt { font-size: 11px; color: var(--text-muted); font-weight: 400; }
     .col-source { min-width: 80px; max-width: 120px; font-size: 12px; color: var(--text-muted); }
     .sent-source-cell { font-size: 12px; color: var(--text-muted); max-width: 120px; }
-    .sent-subrow-source { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-    .word-source { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .sent-subrow-source { font-size: 11px; color: var(--text-muted); margin-top: 2px; margin-bottom: 4px; }
 
     /* ─── TTS buttons ─── */
     .tts-btn {
@@ -754,3 +757,19 @@
       font-size: 13px; padding: 3px 8px; border-radius: 5px; line-height: 1;
     }
     .qz-speak-btn:hover { background: var(--primary-light); border-color: var(--primary); }
+    .qz-source {
+      font-size: 11px; color: var(--text-muted);
+      margin-top: 6px; text-align: right;
+    }
+
+    /* ─── 모름 버튼 ─── */
+    .qz-dontknow-btn {
+      display: block; width: 100%; margin-top: 10px;
+      padding: 10px; border-radius: 8px;
+      border: 1.5px dashed var(--border);
+      background: var(--bg); color: var(--text-muted);
+      font-size: 14px; font-weight: 500; cursor: pointer;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .qz-dontknow-btn:hover { background: #fff3f3; border-color: #f87171; color: #dc2626; }
+    .qz-dontknow-btn.used  { opacity: .5; cursor: default; }
