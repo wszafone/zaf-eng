@@ -1934,22 +1934,9 @@ async function generateExamples(word, meaning, pos) {
 /* ═══════════════════════════════════════════════════════════════
    Boot
 ═══════════════════════════════════════════════════════════════ */
-async function _clearDataOnce() {
-  try {
-    const snap = await _rtdb.ref('/__meta/cleared_v3').once('value');
-    if (!snap.val()) {
-      await _rtdb.ref('/words').remove();
-      await _rtdb.ref('/sentences').remove();
-      _words = []; _sentences = [];
-      await _rtdb.ref('/__meta/cleared_v3').set(true);
-    }
-  } catch(e) { console.error('초기화 오류:', e); }
-}
-
 window.addEventListener('DOMContentLoaded', async () => {
   await _openIDB();
   await _loadAll();
-  await _clearDataOnce();
   navigate();
 });
 window.addEventListener('hashchange', navigate);
